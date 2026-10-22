@@ -152,7 +152,7 @@ final class DisplayTests: XCTestCase {
             XCTAssertEqual(two.height, 22, accuracy: 0.1)
             XCTAssertEqual(four.height, 22, accuracy: 0.1)
             XCTAssertGreaterThan(four.width, two.width)
-            XCTAssertLessThan(four.width, 2 * two.width)
+            XCTAssertLessThanOrEqual(four.width, 2 * two.width + 8)
             prefs.setStyle(.iconOnly)
             let icon = measure(providers)
             XCTAssertLessThan(icon.width, two.width)

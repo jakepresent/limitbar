@@ -53,7 +53,7 @@ struct TrayView: View {
                                 HStack(spacing: 3) {
                                     Image(nsImage: Marks.image(vendor)).renderingMode(.template).resizable()
                                         .interpolation(.high).frame(width: 9, height: 9)
-                                    digit(vendor).frame(width: 38, alignment: .leading)
+                                    digit(vendor)
                                 }
                                 .frame(height: 11)
                             }
@@ -62,7 +62,7 @@ struct TrayView: View {
                 }
             }
         }
-        .padding(.horizontal, 7)
+        .padding(.horizontal, preferences.style == .iconOnly || providers.isEmpty ? 7 : 0)
         .frame(height: 22)
         .fixedSize()
         .accessibilityElement(children: .ignore)
