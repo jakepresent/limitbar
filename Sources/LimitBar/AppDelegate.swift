@@ -125,8 +125,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         resizePanel()
         panel.orderFrontRegardless()
         item.button?.highlight(true)
-        globalOutsideClick = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            self?.hide()
+        globalOutsideClick = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            self?.handleOutsideMouseDown(event)
         }
         localOutsideClick = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { [weak self] event in
             guard let self = self else { return event }
@@ -134,13 +134,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if event.keyCode == 53 { self.hide(); return nil }
                 return event
             }
-            // Do not dismiss before the button's own mouse-up toggle, nor while using panel controls.
-            if event.window === self.panel { return event }
-            if let button = self.item.button, event.window === button.window,
-               button.bounds.contains(button.convert(event.locationInWindow, from: nil)) { return event }
-            self.hide()
+            self.handleOutsideMouseDown(event)
             return event
         }
+    }
+
+    func handleOutsideMouseDown(_ event: NSEvent) {
+        if event.window === panel { return }
+        // The menu-bar system can own a status-item mouse-down. Its global-monitor event
+        // has no local NSWindow, and locationInWindow is already in screen coordinates.
+        let location = event.window?.convertPoint(toScreen: event.locationInWindow) ?? event.locationInWindow
+        if let button = item.button, let host = button.window {
+            let frame = host.convertToScreen(button.convert(button.bounds, to: nil))
+            if frame.contains(location) { return }
+        }
+        hide()
     }
 
     private func hide() {

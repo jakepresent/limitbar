@@ -201,6 +201,44 @@ final class DisplayTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testSystemOwnedStatusClickDoesNotDismissBeforeButtonMouseUp() throws {
+        _ = NSApplication.shared
+        try withPreferences { prefs, _ in
+            let week = window()
+            let store = Store(initialSnapshots: [.claude: Snapshot(vendor: .claude, bar: week, windows: [week])])
+            let delegate = AppDelegate(store: store, preferences: prefs)
+            delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
+            defer { delegate.applicationWillTerminate(Notification(name: NSApplication.willTerminateNotification)) }
+            let button = try XCTUnwrap(delegate.item.button)
+            let host = try XCTUnwrap(button.window)
+            func down(at point: NSPoint, window: Int = 0) throws -> NSEvent {
+                try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseDown, location: point, modifierFlags: [],
+                                               timestamp: ProcessInfo.processInfo.systemUptime,
+                                               windowNumber: window, context: nil, eventNumber: 0,
+                                               clickCount: 1, pressure: 1))
+            }
+            button.performClick(nil)
+            XCTAssertTrue(delegate.panel.isVisible)
+            let frame = host.convertToScreen(button.convert(button.bounds, to: nil))
+            let statusDown = try down(at: NSPoint(x: frame.midX, y: frame.midY))
+            XCTAssertNil(statusDown.window)
+            delegate.handleOutsideMouseDown(statusDown)
+            XCTAssertTrue(delegate.panel.isVisible, "The menu-bar system owns this mouse-down; the button must close the panel on mouse-up")
+            button.performClick(nil)
+            XCTAssertFalse(delegate.panel.isVisible)
+
+            if delegate.panel.isVisible { button.performClick(nil) }
+            button.performClick(nil)
+            let insidePanel = try down(at: NSPoint(x: 10, y: 10), window: delegate.panel.windowNumber)
+            delegate.handleOutsideMouseDown(insidePanel)
+            XCTAssertTrue(delegate.panel.isVisible)
+            let outside = try down(at: NSPoint(x: frame.minX - 400, y: frame.minY - 400))
+            delegate.handleOutsideMouseDown(outside)
+            XCTAssertFalse(delegate.panel.isVisible)
+        }
+    }
+
     func testCriticalUsageAndRoundingPreserveExistingSemantics() {
         let almost = window("Week", "w", 99.6)
         let reading = TrayReading(snapshot: Snapshot(vendor: .claude, bar: almost, windows: [almost]), choice: nil)
