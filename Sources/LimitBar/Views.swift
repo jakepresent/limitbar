@@ -85,7 +85,7 @@ struct TrayView: View {
         let snap = store.snaps[vendor]
         let reading = TrayReading(snapshot: snap, choice: preferences.choice(for: vendor))
         var text = Text(reading.text)
-            .font(.system(size: 10, weight: reading.critical ? .semibold : .regular).monospacedDigit())
+            .font(.system(size: 10, weight: reading.critical ? .bold : .semibold).monospacedDigit())
         if !reading.marker.isEmpty {
             text = text + Text(reading.marker).font(.system(size: 6, weight: .semibold)).baselineOffset(3)
         }
