@@ -144,9 +144,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The menu-bar system can own a status-item mouse-down. Its global-monitor event
         // has no local NSWindow, and locationInWindow is already in screen coordinates.
         let location = event.window?.convertPoint(toScreen: event.locationInWindow) ?? event.locationInWindow
-        if let button = item.button, let host = button.window {
-            let frame = host.convertToScreen(button.convert(button.bounds, to: nil))
-            if frame.contains(location) { return }
+        if let host = item.button?.window {
+            // The native status-item slot includes padding around the button and reaches
+            // the screen edge. Include its boundaries, not just the inset button bounds.
+            let frame = host.frame
+            if location.x >= frame.minX && location.x <= frame.maxX &&
+               location.y >= frame.minY && location.y <= frame.maxY { return }
         }
         hide()
     }

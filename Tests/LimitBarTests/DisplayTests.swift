@@ -239,6 +239,48 @@ final class DisplayTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testStatusItemFullSlotHitAreaIncludesAllEdges() throws {
+        _ = NSApplication.shared
+        try withPreferences { prefs, _ in
+            let week = window()
+            let store = Store(initialSnapshots: [.claude: Snapshot(vendor: .claude, bar: week, windows: [week])])
+            let delegate = AppDelegate(store: store, preferences: prefs)
+            delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
+            defer { delegate.applicationWillTerminate(Notification(name: NSApplication.willTerminateNotification)) }
+            let button = try XCTUnwrap(delegate.item.button)
+            let host = try XCTUnwrap(button.window)
+            // Status-item registration is asynchronous, especially after earlier tests remove one.
+            let deadline = Date().addingTimeInterval(2)
+            while host.frame.height == 0 && Date() < deadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+            }
+            XCTAssertGreaterThan(host.frame.height, 0, "Wait for the native menu-bar slot before testing its edges")
+            for edge in ["exact screen edge", "upper padding", "lower padding", "left boundary", "right boundary"] {
+                button.performClick(nil)
+                XCTAssertTrue(delegate.panel.isVisible)
+                let frame = host.frame
+                let pixel = 1 / host.backingScaleFactor
+                let point: NSPoint
+                switch edge {
+                case "exact screen edge": point = NSPoint(x: frame.midX, y: frame.maxY)
+                case "upper padding": point = NSPoint(x: frame.midX, y: frame.maxY - pixel)
+                case "lower padding": point = NSPoint(x: frame.midX, y: frame.minY + pixel)
+                case "left boundary": point = NSPoint(x: frame.minX, y: frame.midY)
+                default: point = NSPoint(x: frame.maxX, y: frame.midY)
+                }
+                let event = try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseDown,
+                    location: point, modifierFlags: [],
+                    timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: 0,
+                    context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+                delegate.handleOutsideMouseDown(event)
+                XCTAssertTrue(delegate.panel.isVisible, "Native status-item hit area includes \(edge); wait for its mouse-up action")
+                if delegate.panel.isVisible { button.performClick(nil) }
+                XCTAssertFalse(delegate.panel.isVisible)
+            }
+        }
+    }
+
     func testCriticalUsageAndRoundingPreserveExistingSemantics() {
         let almost = window("Week", "w", 99.6)
         let reading = TrayReading(snapshot: Snapshot(vendor: .claude, bar: almost, windows: [almost]), choice: nil)
