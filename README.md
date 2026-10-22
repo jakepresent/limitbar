@@ -1,10 +1,29 @@
 # LimitBar
 
+## Compact UI fork
+
+This fork adds a two-row usage grid, an icon-only style, and persistent per-provider window choices.
+Left-click the menu-bar item to open or close the panel; clicking outside closes it. Hover does not open it.
+Right-click the menu-bar item for **Menu Bar Style**, **Launch at Login**, and **Quit LimitBar**.
+Right-click any usage row inside the panel and choose **Show in Menu Bar** to select that limit.
+**Use Default Window** restores the original provider recommendation. A selected window that is temporarily
+unavailable shows `—` rather than silently switching to another limit.
+
+The grid fills each column top-to-bottom, with up to two providers per column. Newly discovered providers
+are appended without rearranging the existing order. Missing providers are omitted from both surfaces.
+Percentages include `%`; `w` marks a weekly window, and `!` warns when another limit is at 90% or above.
+Display preferences are stored in the app's macOS preferences, separately from the usage cache.
+
+Build this fork on a Mac with `scripts/build-app.sh build` and run `swift test` for its presentation tests.
+The upstream installation instructions below install the original release, not this fork.
+
+---
+
 **How much of your AI coding limits you've used — in the macOS menu bar.** One glance for Claude Code,
-Codex, Gemini (Google Antigravity) and Grok Build; hover for the 5-hour and weekly windows and when
+Codex, Gemini (Google Antigravity) and Grok Build; click for the 5-hour and weekly windows and when
 they reset.
 
-![LimitBar in the menu bar with its hover panel open](docs/screenshot.png)
+![Upstream LimitBar screenshot, before the compact UI changes](docs/screenshot.png)
 
 - **Native and light.** A Swift menu bar app, no Electron, no background browser. It asks each CLI only
   when that CLI has been used, so an idle Mac spends ~nothing.
@@ -12,7 +31,7 @@ they reset.
   stores or sends a token, cookie or password — sign-in stays inside each CLI.
 - **Only what you have.** CLIs you don't have installed stay out of the menu bar.
 
-## Install
+## Install (upstream release)
 
 Paste this into your AI agent (Claude Code, Codex, Gemini, Grok…):
 
@@ -63,14 +82,14 @@ Installed somewhere else? Point LimitBar at it:
 
 | You see | Meaning |
 |---|---|
-| `23` | 23 % of the window **used** (5-hour for Claude and Codex) |
-| `81ʷ` | a **weekly** window — that service has no 5-hour limit, or the weekly one is what binds |
+| `23%` | 23 % of the selected window **used** (5-hour for Claude and Codex by default) |
+| `81%ʷ` | a **weekly** window |
 | **red** | 90 % or more used |
-| `23!` | the number shown is fine, but another window of the same service (e.g. the weekly) is at 90 %+ |
+| `23%!` | the number shown is fine, but another window of the same service (e.g. the weekly) is at 90 %+ |
 | `—` | no reading yet, or the window has reset since the last reading |
 | dimmed | the reading is more than 45 minutes old |
 
-Hover (or click to pin) for every window, reset times, plan, and anything that needs attention —
+Click to open or close the panel with every window, reset times, plan, and anything that needs attention —
 "Signed out — run `codex login`", for example.
 
 ## Optional: free Claude readings from the status line
@@ -146,6 +165,7 @@ or quit LimitBar from its panel and delete `LimitBar` from Applications, `~/Appl
 ## Build and test
 
 ```bash
+swift test                                 # presentation, preferences, and grid tests
 scripts/build-app.sh build                  # → build/LimitBar.app (native arch)
 build/LimitBar.app/Contents/MacOS/LimitBar --probe   # what every CLI returns right now, as JSON
 tests/states.sh build/LimitBar.app

@@ -11,6 +11,11 @@ let package = Package(
             name: "LimitBar",
             path: "Sources/LimitBar",
             swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .testTarget(
+            name: "LimitBarTests",
+            dependencies: ["LimitBar"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
         )
     ]
 )

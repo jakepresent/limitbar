@@ -19,7 +19,7 @@ enum Vendor: String, CaseIterable, Codable {
 /// Why a vendor shows no numbers. `ok` = the CLI answered.
 enum VendorState: String, Codable {
     case ok
-    case missing        // CLI not found: hidden from the menu bar, listed in the panel
+    case missing        // CLI not found: hidden from both the menu bar and panel
     case untrusted      // found, but owned by another account or group/world-writable: never run
     case signedOut      // the CLI says nobody is signed in
     case failed         // it ran and did not give limits (timeout, error, changed format)
@@ -45,11 +45,6 @@ struct Snapshot: Codable, Equatable {
     var notes: [String] = []      // e.g. "2 free full resets · next expires Fri 3 Jan"
     var measuredAt: Date?         // when the vendor's numbers were taken (not when we looked)
     var error: String?            // last failure, shown dimmed; previous numbers are kept
-
-    /// Any window of this vendor at ≥ 90 % other than the one in the bar → "!" next to the digit.
-    var otherHot: Bool {
-        windows.contains { $0 != bar && !$0.resetPassed && ($0.used ?? 0) >= 90 }
-    }
 
     static func status(_ v: Vendor, _ state: VendorState, _ error: String? = nil) -> Snapshot {
         Snapshot(vendor: v, state: state, error: error)

@@ -5,7 +5,7 @@ import Foundation
 /// Keeps one Snapshot per vendor fresh at the lowest cost:
 /// - one CLI at a time on a serial queue, hard 20–40 s deadlines, whole process group killed;
 /// - a source is re-polled only when its own activity files moved since the last poll (or its reset time
-///   passed), plus a slow safety interval; hovering refreshes anything older than 90 s;
+///   passed), plus a slow safety interval; opening the panel refreshes anything older than 90 s;
 /// - Claude reads the opt-in statusline file for free and runs `claude -p /usage` at most every 20 min
 ///   when that file is missing or stale;
 /// - paused while the Mac sleeps, refreshed on wake; last good values cached on disk, never shown as 0.
@@ -16,6 +16,7 @@ final class Store: ObservableObject {
     private let queue = DispatchQueue(label: "limitbar.fetch", qos: .utility)
     private var timer: Timer?
     private var asleep = false
+    private let pollingEnabled: Bool
     private var lastPoll: [Vendor: Date] = [:]
     private var lastActivity: [Vendor: Date] = [:]
     private var lastClaudeUsage = Date.distantPast
@@ -33,15 +34,21 @@ final class Store: ObservableObject {
     /// A missing CLI is looked for again this often (it may have just been installed).
     private let missingInterval: TimeInterval = 5 * 60
 
-    /// Vendors the menu bar shows: everything whose CLI exists. Missing ones are listed in the panel only.
+    /// Only confirmed installed vendors appear. Unknown/missing CLIs do not reserve phantom tray rows.
     var installed: [Vendor] {
         Vendor.allCases.filter { v in
-            guard let s = snaps[v] else { return true }
+            guard let s = snaps[v] else { return false }
             return s.state != .missing
         }
     }
 
-    init() {
+    /// Supplying snapshots creates an inert store for deterministic presentation tests.
+    init(initialSnapshots: [Vendor: Snapshot]? = nil) {
+        pollingEnabled = initialSnapshots == nil
+        if let initialSnapshots = initialSnapshots {
+            snaps = initialSnapshots
+            return
+        }
         loadCache()
         let ws = NSWorkspace.shared.notificationCenter
         ws.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in self?.asleep = true }
@@ -53,9 +60,9 @@ final class Store: ObservableObject {
         refresh(force: true)
     }
 
-    /// Called by the timer (every 30 s, cheap checks only), on wake, on hover and from the panel.
+    /// Called by the timer (every 30 s, cheap checks only), on wake, on opening the panel and from its Refresh button.
     func refresh(force: Bool = false, olderThan: TimeInterval? = nil) {
-        guard !asleep else { return }
+        guard pollingEnabled, !asleep else { return }
         for v in Vendor.allCases where shouldPoll(v, force: force, olderThan: olderThan) {
             schedule(v, force: force)
         }

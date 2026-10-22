@@ -1,5 +1,4 @@
 import AppKit
-import ServiceManagement
 import SwiftUI
 
 
@@ -32,42 +31,66 @@ private func isStale(_ s: Snapshot?) -> Bool {
     return Date().timeIntervalSince(m) > staleAfter
 }
 
-// MARK: - Tray: mark + % used, no "%" sign, superscript w for weekly, red ≥ 90, "!"
+// MARK: - Tray: two rows per column, or one compact template icon
 
 struct TrayView: View {
     @ObservedObject var store: Store
+    @ObservedObject var preferences: DisplayPreferences
+
+    private var providers: [Vendor] { preferences.orderedProviders(store.installed) }
 
     var body: some View {
-        HStack(spacing: 8) {
-            ForEach(store.installed, id: \.self) { v in
-                let s = store.snaps[v]
-                HStack(spacing: 3) {
-                    Image(nsImage: Marks.image(v)).renderingMode(.template).resizable()
-                        .interpolation(.high).frame(width: 13, height: 13)
-                    digit(s)
+        Group {
+            if preferences.style == .iconOnly || providers.isEmpty {
+                Image(systemName: "gauge.with.dots.needle.50percent")
+                    .font(.system(size: 15))
+                    .foregroundStyle(needsAttention ? Color.hot : Color.primary)
+            } else {
+                HStack(spacing: 8) {
+                    ForEach(Array(TrayLayout.columns(providers).enumerated()), id: \.offset) { _, column in
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(column, id: \.self) { vendor in
+                                HStack(spacing: 3) {
+                                    Image(nsImage: Marks.image(vendor)).renderingMode(.template).resizable()
+                                        .interpolation(.high).frame(width: 9, height: 9)
+                                    digit(vendor).frame(width: 38, alignment: .leading)
+                                }
+                                .frame(height: 11)
+                            }
+                        }
+                    }
                 }
             }
         }
         .padding(.horizontal, 7)
         .frame(height: 22)
         .fixedSize()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("AI subscription limits")
+        .accessibilityValue(providers.map { vendor in
+            let reading = TrayReading(snapshot: store.snaps[vendor], choice: preferences.choice(for: vendor))
+            let label = reading.window?.label ?? preferences.choice(for: vendor)?.label ?? "Usage"
+            return "\(vendor.name), \(label), \(reading.text)" + (reading.otherHot ? ", another limit is nearly exhausted" : "")
+        }.joined(separator: "; "))
     }
 
-    private func digit(_ s: Snapshot?) -> some View {
-        let w = s?.state == .ok ? s?.bar : nil
-        let shown: Double? = (w == nil || w!.resetPassed) ? nil : w!.used
-        let crit = (shown ?? 0) >= 90
-        let weekly = w?.short == "w"
-        let bang = s?.otherHot ?? false
-        var t = Text(percentText(shown))
-            .font(.system(size: 13, weight: crit ? .semibold : .regular).monospacedDigit())
-        if weekly || bang {
-            var sup = Text(weekly ? "w" : "").font(.system(size: 8.5, weight: .medium))
-            if bang { sup = sup + Text("!").font(.system(size: 8.5, weight: .heavy)) }
-            t = t + sup.baselineOffset(5)
+    private var needsAttention: Bool {
+        providers.contains {
+            let reading = TrayReading(snapshot: store.snaps[$0], choice: preferences.choice(for: $0))
+            return reading.critical || reading.otherHot
         }
-        return t.foregroundStyle(crit ? Color.hot : Color.primary)
-            .opacity(isStale(s) && shown != nil ? 0.5 : 1)
+    }
+
+    private func digit(_ vendor: Vendor) -> some View {
+        let snap = store.snaps[vendor]
+        let reading = TrayReading(snapshot: snap, choice: preferences.choice(for: vendor))
+        var text = Text(reading.text)
+            .font(.system(size: 10, weight: reading.critical ? .semibold : .regular).monospacedDigit())
+        if !reading.marker.isEmpty {
+            text = text + Text(reading.marker).font(.system(size: 6, weight: .semibold)).baselineOffset(3)
+        }
+        return text.foregroundStyle(reading.critical ? Color.hot : Color.primary)
+            .opacity(isStale(snap) && reading.used != nil ? 0.5 : 1)
             .fixedSize()
     }
 }
@@ -76,20 +99,17 @@ struct TrayView: View {
 
 struct PanelView: View {
     @ObservedObject var store: Store
-    var onQuit: () -> Void
-    @State private var login = SMAppService.mainApp.status == .enabled
+    @ObservedObject var preferences: DisplayPreferences
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { _ in
             VStack(spacing: 0) {
                 ForEach(Array(store.installed.enumerated()), id: \.element) { i, v in
                     if i > 0 { Hairline() }
-                    VendorSection(vendor: v, snap: store.snaps[v], busy: store.busy.contains(v))
+                    VendorSection(vendor: v, snap: store.snaps[v], busy: store.busy.contains(v), preferences: preferences)
                 }
-                let missing = Vendor.allCases.filter { !store.installed.contains($0) }
-                if !missing.isEmpty {
-                    if !store.installed.isEmpty { Hairline() }
-                    MissingRow(vendors: missing)
+                if store.installed.isEmpty {
+                    Text("No providers found").font(.system(size: 12)).foregroundStyle(.secondary).padding(12)
                 }
                 Hairline()
                 footer
@@ -103,17 +123,6 @@ struct PanelView: View {
             FooterButton(title: store.busy.isEmpty ? "Refresh" : "Refreshing…") { store.refresh(force: true) }
                 .disabled(!store.busy.isEmpty)
             Spacer()
-            HStack(spacing: 6) {
-                Text("Launch at Login").font(.system(size: 12))
-                Toggle("", isOn: Binding(get: { login }, set: { on in
-                    do {
-                        if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
-                    } catch {}
-                    login = SMAppService.mainApp.status == .enabled
-                })).toggleStyle(.switch).controlSize(.mini).labelsHidden()
-            }
-            Spacer()
-            FooterButton(title: "Quit", action: onQuit)
         }
         .padding(EdgeInsets(top: 6, leading: 8, bottom: 8, trailing: 8))
     }
@@ -141,6 +150,7 @@ private struct VendorSection: View {
     let vendor: Vendor
     let snap: Snapshot?
     let busy: Bool
+    @ObservedObject var preferences: DisplayPreferences
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -159,6 +169,18 @@ private struct VendorSection: View {
                          style: i == 0 ? .primary : (w.label == "5-hour" || w.label == "Week" ? .normal : .quiet))
                     .padding(.top, 7)
                     .opacity(isStale(snap) ? 0.48 : 1)
+                    .contentShape(Rectangle())
+                    .contextMenu {
+                        Button { preferences.select(w, for: vendor) } label: {
+                            if preferences.choice(for: vendor)?.matches(w) == true {
+                                Label("Shown in Menu Bar", systemImage: "checkmark")
+                            } else {
+                                Text("Show in Menu Bar")
+                            }
+                        }
+                        Button("Use Default Window") { preferences.useDefaultWindow(for: vendor) }
+                            .disabled(preferences.choice(for: vendor) == nil)
+                    }
             }
             if snap?.state == .signedOut {
                 Text("Signed out — \(vendor.loginHint)").font(.system(size: 12)).foregroundStyle(.secondary)
@@ -197,20 +219,6 @@ private struct VendorSection: View {
         let s = Int(Date().timeIntervalSince(m))
         let t = s < 60 ? "just now" : s < 3600 ? "\(s / 60) min ago" : s < 86400 ? "\(s / 3600) h ago" : "\(s / 86400) d ago"
         return "updated " + t
-    }
-}
-
-/// CLIs that aren't installed: one quiet line, so the panel says what limitbar can read once they are.
-private struct MissingRow: View {
-    let vendors: [Vendor]
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("Not installed").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
-            Text(vendors.map { "\($0.name) (\($0.product))" }.joined(separator: " · "))
-                .font(.system(size: 11)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(EdgeInsets(top: 8, leading: 12, bottom: 9, trailing: 12))
     }
 }
 
