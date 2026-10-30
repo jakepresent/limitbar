@@ -112,6 +112,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         fx.layer?.masksToBounds = true
         fx.layer?.borderWidth = 0.5
         fx.layer?.borderColor = NSColor.white.withAlphaComponent(0.22).cgColor
+        // Behind-window material has its own surface; layer clipping alone leaves square corners.
+        // A stretchable material mask also gives the window shadow the rounded outline.
+        let radius: CGFloat = 16
+        let mask = NSImage(size: NSSize(width: radius * 2 + 1, height: radius * 2 + 1), flipped: false) { rect in
+            NSColor.black.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+            return true
+        }
+        mask.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
+        mask.resizingMode = .stretch
+        fx.maskImage = mask
 
         panelHost = NSHostingView(rootView: AnyView(PanelView(store: store, preferences: preferences, usage: usage, ui: ui)))
         panelHost.translatesAutoresizingMaskIntoConstraints = false
