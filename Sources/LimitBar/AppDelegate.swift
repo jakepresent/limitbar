@@ -15,9 +15,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var subs = Set<AnyCancellable>()
     private var globalOutsideClick: Any?
     private var localOutsideClick: Any?
-    private let usage = UsageStore()
-    private let ui = PanelState()
-    private var usageTimer: Timer?
 
     init(store: Store = Store(), preferences: DisplayPreferences = DisplayPreferences()) {
         self.store = store
@@ -54,20 +51,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         preferences.objectWillChange.sink { [weak self] _ in
             // Published values and SwiftUI's intrinsic size update after this notification.
             DispatchQueue.main.async { self?.resizeItem(); self?.resizePanel() }
-        }.store(in: &subs)
-        // The Usage page changes the panel's height: on every switch and whenever new totals arrive. Each
-        // change measures the natural height again (scrolling off) before deciding whether it must scroll.
-        Publishers.MergeMany(ui.$page.map { _ in () }.eraseToAnyPublisher(), ui.$range.map { _ in () }.eraseToAnyPublisher(),
-                             usage.$summary.map { _ in () }.eraseToAnyPublisher(), usage.$reading.map { _ in () }.eraseToAnyPublisher())
-            .receive(on: RunLoop.main).sink { [weak self] _ in
-                DispatchQueue.main.async { self?.ui.scrolls = false; DispatchQueue.main.async { self?.resizePanel() } }
-            }.store(in: &subs)
-        ui.$scrolls.dropFirst().filter { $0 }.receive(on: RunLoop.main).sink { [weak self] _ in
-            DispatchQueue.main.async { self?.resizePanel() }
-        }.store(in: &subs)
-        ui.$page.sink { [weak self] page in
-            guard let self = self, self.panel?.isVisible == true else { return }
-            if page == .usage { self.usage.refresh() } else { self.usage.pause() }
         }.store(in: &subs)
     }
 
@@ -124,7 +107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mask.resizingMode = .stretch
         fx.maskImage = mask
 
-        panelHost = NSHostingView(rootView: AnyView(PanelView(store: store, preferences: preferences, usage: usage, ui: ui)))
+        panelHost = NSHostingView(rootView: AnyView(PanelView(store: store, preferences: preferences)))
         panelHost.translatesAutoresizingMaskIntoConstraints = false
         fx.addSubview(panelHost)
         NSLayoutConstraint.activate([panelHost.leadingAnchor.constraint(equalTo: fx.leadingAnchor),
@@ -140,28 +123,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let size = panelHost.fittingSize
         guard size.height > 0, let button = item.button, let win = button.window else { return }
         let r = win.convertToScreen(button.convert(button.bounds, to: nil))
-        guard let screen = (win.screen ?? NSScreen.main)?.visibleFrame else { return }   // no display attached
-        // Taller than the screen (many models on Usage): the middle scrolls instead. The natural height is
-        // measured without scrolling; the flag change re-renders and calls this again.
-        let room = screen.height - 16
-        if ui.maxHeight != room { ui.maxHeight = room }
-        if !ui.scrolls, size.height > room { ui.scrolls = true; return }
-        let height = min(size.height, room)
+        guard let screen = (win.screen ?? NSScreen.main)?.visibleFrame else { return }
         var x = r.midX - size.width / 2
         x = min(max(x, screen.minX + 8), screen.maxX - size.width - 8)
-        let y = max(r.minY - height - 5, screen.minY + 4)
-        panel.setFrame(NSRect(x: x, y: y, width: size.width, height: height), display: panel.isVisible)
+        let y = r.minY - size.height - 5
+        panel.setFrame(NSRect(x: x, y: y, width: size.width, height: size.height), display: panel.isVisible)
     }
 
     private func show() {
         guard !panel.isVisible else { return }
         store.refresh(olderThan: 90)      // panel open: only sources older than 90 s
-        if ui.page == .usage { usage.refresh() }   // logs are read only for someone looking at them
-        usageTimer?.invalidate()
-        usageTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
-            guard let self = self, self.panel.isVisible, self.ui.page == .usage else { return }
-            self.usage.refresh()
-        }
         resizePanel()
         panel.orderFrontRegardless()
         item.button?.highlight(true)
@@ -199,8 +170,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item?.button?.highlight(false)
         if let monitor = globalOutsideClick { NSEvent.removeMonitor(monitor); globalOutsideClick = nil }
         if let monitor = localOutsideClick { NSEvent.removeMonitor(monitor); localOutsideClick = nil }
-        usageTimer?.invalidate(); usageTimer = nil
-        usage.pause()
     }
 
     @objc private func clicked() {

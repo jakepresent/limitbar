@@ -29,31 +29,6 @@ if args.contains("--probe") {
     exit(0)
 }
 
-// `LimitBar --usage [--home <dir>]` reads the token logs once, the way the Usage view does, and prints per
-// vendor the totals per day and per model for the last 7 days as JSON. Model names and numbers only.
-// `--home` reads the logs under another folder instead (tests/usage.sh), with its own index next to them.
-if args.contains("--usage") {
-    var home = CLI.home, cache = "\(Paths.cache)/usage.json"
-    if let i = args.firstIndex(of: "--home"), i + 1 < args.count {
-        home = args[i + 1]
-        cache = "\(home)/limitbar-usage-index.json"
-    }
-    guard let sum = UsageScanner(home: home, cacheFile: cache).scan() else {
-        FileHandle.standardError.write(Data("limitbar: the usage read was interrupted\n".utf8)); exit(1)
-    }
-    var out: [String: Any] = ["days": sum.keys]
-    for (v, u) in sum.vendors {
-        guard u.reported else { out[v.rawValue] = ["reported": false]; continue }
-        let t = u.total(sum.keys), today = u.total([sum.keys.last!])
-        out[v.rawValue] = ["reported": true, "tokens": t.tokens, "calls": t.calls, "today": ["tokens": today.tokens, "calls": today.calls],
-                           "perDay": sum.keys.map { u.tokens(on: $0) },
-                           "models": Dictionary(uniqueKeysWithValues: u.models(sum.keys).map { ($0.model, ["tokens": $0.total.tokens, "calls": $0.total.calls]) })]
-    }
-    let d = (try? JSONSerialization.data(withJSONObject: out, options: [.prettyPrinted, .sortedKeys])) ?? Data()
-    print(String(decoding: d, as: UTF8.self))
-    exit(0)
-}
-
 // `LimitBar --statusline` — optional Claude Code status line (see README). Claude Code pipes a JSON blob
 // with the current rate limits to it on every refresh; we keep only the limits, in
 // ~/Library/Caches/limitbar/claude-status.json, and print one short line, e.g. "5h 23% · 7d 41%".
@@ -85,17 +60,9 @@ if args.contains("--statusline") {
 }
 
 #if DEBUG
-// `LimitBar --render-panel <out.png> [limits|usage] [today|week]` (debug builds only): the panel drawn
-// offscreen from the cached limits and the real usage logs, for checking layout without the menu bar.
+// `LimitBar --render-panel <out.png>` (debug builds only): draw the limits panel from cached readings.
 if let i = args.firstIndex(of: "--render-panel"), i + 1 < args.count {
-    let ui = PanelState()
-    ui.page = args.contains("limits") ? .limits : .usage
-    ui.range = args.contains("today") ? .today : .week
-    if let j = args.firstIndex(of: "--max-height"), j + 1 < args.count, let h = Double(args[j + 1]) { ui.maxHeight = h; ui.scrolls = true }
-    let usage = UsageStore()
-    usage.refresh()
-    while usage.summary == nil { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
-    let view = PanelView(store: Store(live: false), preferences: DisplayPreferences(), usage: usage, ui: ui)
+    let view = PanelView(store: Store(live: false), preferences: DisplayPreferences())
         .background(RoundedRectangle(cornerRadius: 16).fill(Color(red: 0.17, green: 0.17, blue: 0.18)))
         .environment(\.colorScheme, .dark)
     MainActor.assumeIsolated {

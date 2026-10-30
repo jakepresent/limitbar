@@ -1,5 +1,10 @@
 # Changelog
 
+## Fork changes (unreleased)
+
+- Remove the local-token Usage tab, its log scanner, and the `--usage` command. The panel shows subscription limits directly.
+- Mask the panel material to its rounded corners, including on light backgrounds.
+
 ## 1.1.0
 
 - **Usage view.** A **Limits | Usage** switch at the top of the panel. Usage shows, per service, the
