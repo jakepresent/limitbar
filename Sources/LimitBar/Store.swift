@@ -43,13 +43,15 @@ final class Store: ObservableObject {
     }
 
     /// Supplying snapshots creates an inert store for deterministic presentation tests.
-    init(initialSnapshots: [Vendor: Snapshot]? = nil) {
-        pollingEnabled = initialSnapshots == nil
+    /// `live: false` only loads the cached readings: no CLI runs, no timers (debug panel renders).
+    init(initialSnapshots: [Vendor: Snapshot]? = nil, live: Bool = true) {
+        pollingEnabled = initialSnapshots == nil && live
         if let initialSnapshots = initialSnapshots {
             snaps = initialSnapshots
             return
         }
         loadCache()
+        guard live else { return }
         let ws = NSWorkspace.shared.notificationCenter
         ws.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in self?.asleep = true }
         ws.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
